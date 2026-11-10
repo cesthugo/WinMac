@@ -1,0 +1,32 @@
+engine/build.sh and .github/workflows/build-engine.yml are adapted from
+conversio-wine (https://github.com/theoron-apps/conversio-wine), whose build
+scripts are released under the MIT License:
+
+  MIT License (build scripts in this repository)
+
+  Copyright (c) 2026 Theoron
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+The Wine built by these scripts is CodeWeavers' open-source CrossOver Wine,
+licensed under the LGPL-2.1-or-later; every release attaches the exact source
+tarball it was built from. CrossOver is a trademark of CodeWeavers. This
+project is not affiliated with CodeWeavers, Apple or Valve.
+
+D3DMetal belongs to Apple and is never redistributed by this project.

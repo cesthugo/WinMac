@@ -1,0 +1,148 @@
+name: Build engine
+
+# Builds Wine from CodeWeavers' CrossOver sources (LGPL) into a cave engine and,
+# when asked, publishes it as a release next to the exact source tarball.
+# D3DMetal is never included: users import it from their own GPTK install.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cx_version:
+        description: CrossOver source version
+        default: "26.3.0"
+        type: string
+      revision:
+        description: Build number for this CrossOver version
+        default: "1"
+        type: string
+      cx_sha256:
+        description: SHA-256 of the source tarball (only for a version not pinned in engine/build.sh)
+        default: ""
+        type: string
+      publish:
+        description: Publish a release when the build succeeds
+        default: false
+        type: boolean
+
+concurrency:
+  group: build-engine
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Wine ${{ inputs.cx_version }} (x86_64)
+    # Wine for macOS is an Intel program; an Intel runner gives native x86_64 Homebrew libraries.
+    runs-on: macos-15-intel
+    timeout-minutes: 330
+    permissions:
+      contents: read
+    env:
+      CX_VER: ${{ inputs.cx_version }}
+      REVISION: ${{ inputs.revision }}
+      CX_SHA256: ${{ inputs.cx_sha256 }}
+      CC: ccache clang
+      CXX: ccache clang++
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 3G
+      CCACHE_COMPRESS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache CrossOver sources
+        uses: actions/cache@v4
+        with:
+          path: build/crossover-sources-${{ env.CX_VER }}.tar.gz
+          key: crossover-sources-${{ env.CX_VER }}
+
+      - name: Cache Wine Mono and Gecko
+        uses: actions/cache@v4
+        with:
+          path: build/addons
+          key: wine-addons-${{ env.CX_VER }}
+
+      - name: Restore compiler cache
+        id: ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ env.CX_VER }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ env.CX_VER }}-
+            ccache-
+
+      - run: engine/build.sh deps
+      - run: engine/build.sh fetch
+      - run: engine/build.sh configure 2>&1 | tee build/configure.log
+      - name: Build
+        run: engine/build.sh build > build/make.log 2>&1 || { tail -n 200 build/make.log; exit 1; }
+      - run: engine/build.sh install
+      - run: engine/build.sh addons
+      - run: engine/build.sh bundle
+      - run: engine/build.sh test
+      - run: engine/build.sh package
+
+      - name: Save compiler cache
+        if: always() && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-${{ env.CX_VER }}-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cave-wine-cx${{ env.CX_VER }}-${{ env.REVISION }}
+          path: dist/
+          retention-days: 14
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-cx${{ env.CX_VER }}-${{ env.REVISION }}
+          path: |
+            build/configure.log
+            build/make.log
+            build/wine-build/config.log
+            build/smoke-test.log
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish release
+    needs: build
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CX_VER: ${{ inputs.cx_version }}
+      REVISION: ${{ inputs.revision }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: cave-wine-cx${{ inputs.cx_version }}-${{ inputs.revision }}
+          path: dist
+
+      - name: Attach the exact sources (LGPL)
+        run: |
+          curl -fL --retry 3 -o "dist/crossover-sources-${CX_VER}.tar.gz" \
+            "https://media.codeweavers.com/pub/crossover/source/crossover-sources-${CX_VER}.tar.gz"
+
+      - name: Create release
+        run: |
+          TAG="engine-cx${CX_VER}-${REVISION}"
+          cat > notes.md <<NOTES
+          Wine built from CodeWeavers' CrossOver ${CX_VER} sources (build ${REVISION}), for cave.
+
+          - \`cave-wine-cx${CX_VER}-${REVISION}-x86_64.tar.xz\`: the engine (x86_64, runs on Apple silicon through Rosetta 2).
+          - \`crossover-sources-${CX_VER}.tar.gz\`: the exact sources it was built from (LGPL-2.1-or-later), unmodified.
+
+          D3DMetal is not included. After installing, run \`cave engine import-d3dmetal\`.
+          Not affiliated with CodeWeavers or Apple. CrossOver is a trademark of CodeWeavers.
+          NOTES
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --title "Engine CrossOver ${CX_VER} (build ${REVISION})" --notes-file notes.md
