@@ -10,7 +10,7 @@
 # D3DMetal is NOT part of the build: Apple does not allow redistributing it.
 # `cave engine import-d3dmetal` copies it from the user's own GPTK install.
 #
-# Usage: engine/build.sh deps|fetch|configure|build|install|addons|bundle|test|package|all
+# Usage: engine/build.sh deps|fetch|configure|build|install|addons|bundle|test-native|test|package|all
 # Environment: CX_VER (default 26.3.0), REVISION (default 1), CX_SHA256, BUILD_DIR, JOBS.
 
 set -euo pipefail
@@ -189,9 +189,16 @@ cmd_bundle() {
   fi
   log "Signing ad hoc"
   local file
+  local signed=0
   while IFS= read -r -d '' file; do
-    file -b "$file" | grep -q 'Mach-O' && { codesign --force --sign - "$file" 2>/dev/null || echo "could not sign $file"; }
+    # An `if`, not `test && sign`: with set -e, a final non-Mach-O file would
+    # otherwise make the whole function fail silently.
+    if file -b "$file" | grep -q 'Mach-O'; then
+      codesign --force --sign - "$file" 2>/dev/null || echo "could not sign $file"
+      signed=$((signed + 1))
+    fi
   done < <(find "$WINE_ROOT" -type f -print0)
+  echo "signed $signed Mach-O files"
 }
 
 # macOS has no coreutils `timeout`.
@@ -203,10 +210,18 @@ except subprocess.TimeoutExpired:
     sys.exit(124)' "$@"
 }
 
-cmd_test() {
-  log "Smoke test"
+# Runs anywhere, including the Intel build runner.
+cmd_test_native() {
+  log "Native test"
   export DYLD_FALLBACK_LIBRARY_PATH="$WINE_ROOT/lib:/usr/lib"
   "$WINE_ROOT/bin/wine" --version
+}
+
+# Starts Windows inside Wine. On hosted Intel runners Wine hangs in explorer,
+# so CI runs this on Apple silicon (see the smoke job).
+cmd_test() {
+  cmd_test_native
+  log "Smoke test"
   local prefix="$BUILD_DIR/test-prefix" trace="$BUILD_DIR/smoke-test.log"
   rm -rf "$prefix"; mkdir -p "$prefix"
   # Hosted runners have no WindowServer session: use Wine's null display driver.
@@ -248,6 +263,7 @@ cmd_package() {
 }
 
 case "${1:-all}" in
+  test-native) cmd_test_native ;;
   deps|fetch|configure|build|install|addons|bundle|test|package) "cmd_$1" ;;
   all) cmd_deps; cmd_fetch; cmd_configure; cmd_build; cmd_install; cmd_addons; cmd_bundle; cmd_test; cmd_package ;;
   *) echo "usage: $0 [all|deps|fetch|configure|build|install|addons|bundle|test|package]"; exit 1 ;;

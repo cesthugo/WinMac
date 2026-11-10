@@ -82,7 +82,7 @@ jobs:
       - run: engine/build.sh install
       - run: engine/build.sh addons
       - run: engine/build.sh bundle
-      - run: engine/build.sh test
+      - run: engine/build.sh test-native
       - run: engine/build.sh package
 
       - name: Save compiler cache
@@ -110,9 +110,40 @@ jobs:
             build/smoke-test.log
           if-no-files-found: ignore
 
+  smoke:
+    name: Start Windows (Apple silicon)
+    needs: build
+    runs-on: macos-26
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      # Only run the test: no Intel Homebrew here, and none is needed.
+      CAVE_UNDER_ROSETTA: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rosetta
+        run: arch -x86_64 /usr/bin/true || softwareupdate --install-rosetta --agree-to-license
+      - uses: actions/download-artifact@v4
+        with:
+          name: cave-wine-cx${{ inputs.cx_version }}-${{ inputs.revision }}
+          path: dist
+      - name: Extract the release archive
+        run: |
+          cd dist && shasum -a 256 -c ./*.tar.xz.sha256 && cd ..
+          mkdir -p build/stage
+          tar -xJf dist/*.tar.xz -C build/stage
+      - run: engine/build.sh test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-log-${{ github.run_id }}
+          path: build/smoke-test.log
+          if-no-files-found: ignore
+
   publish:
     name: Publish release
-    needs: build
+    needs: [build, smoke]
     if: inputs.publish
     runs-on: ubuntu-latest
     permissions:
