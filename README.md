@@ -1,4 +1,4 @@
-# cave
+# WinMac
 
 **Play Windows games on an Apple Silicon Mac, from the command line.**
 
@@ -6,7 +6,8 @@ I wanted to play games like Elden Ring and Spider-Man 2 on my MacBook using only
 free, open tools. The pieces needed to do this already exist (Wine, Apple's
 Game Porting Toolkit, Rosetta 2), but putting them together by hand is painful:
 environment variables, prefixes, launchers that crash, logs that are hard to
-read. cave is the tool that glues them together for me.
+read. WinMac is the tool that glues them together for me. You use it
+through a single command, `cave`.
 
 > **Status: early and experimental.** The command-line core works and is tested,
 > but the tests run against a fake Wine. Running real games is still a work in
@@ -14,7 +15,7 @@ read. cave is the tool that glues them together for me.
 
 ## How it works
 
-cave doesn't translate anything itself. It drives three existing layers:
+WinMac doesn't translate anything itself. It drives three existing layers:
 
 | Layer | What it does |
 |---|---|
@@ -22,7 +23,7 @@ cave doesn't translate anything itself. It drives three existing layers:
 | Wine | Turns Windows system calls into macOS ones |
 | D3DMetal (from Apple's GPTK) | Turns DirectX 11/12 graphics into Metal |
 
-On top of that, cave gives you:
+On top of that, WinMac gives you:
 
 - **One isolated Windows environment (prefix) per game or launcher**, so one
   game's settings never break another.
@@ -34,7 +35,7 @@ On top of that, cave gives you:
 
 ## Getting a Wine engine
 
-cave needs a Wine build to run games with. There are two options:
+WinMac needs a Wine build to run games with. There are two options:
 
 | Engine | Wine version | D3DMetal | Verdict |
 |---|---|---|---|
@@ -47,7 +48,7 @@ open-source licence (LGPL). This repository builds it for you:
 (**Actions → Build engine**, about two hours the first time) and can publish
 the result as a release, together with the exact sources it was built from.
 
-D3DMetal belongs to Apple and is never shared by this project. Instead, cave
+D3DMetal belongs to Apple and is never shared by this project. Instead, WinMac
 copies it from the Game Porting Toolkit installed on your own Mac:
 
 ```sh
@@ -68,6 +69,7 @@ You need an Apple Silicon Mac with Rosetta 2 (`softwareupdate --install-rosetta`
 and Go 1.22 or later.
 
 ```sh
+go generate ./internal/steam   # builds the small Windows helper embedded in cave (see below)
 go build -o bin/cave ./cmd/cave
 go test ./...
 ```
@@ -110,7 +112,7 @@ cave add mygame --prefix mygames --exe 'C:\Games\MyGame\game.exe' -- -windowed
 | `--backend wined3d` | Wine's own DirectX → OpenGL, for older games |
 | `--avx` | Tells games the CPU supports AVX. Some games refuse to start without it |
 | `--hud` | Shows Apple's Metal performance overlay (FPS, GPU time) |
-| `--env KEY=VALUE` | Any extra variable. Your values always win over cave's defaults |
+| `--env KEY=VALUE` | Any extra variable. Your values always win over WinMac's defaults |
 
 ## Where things are stored
 
@@ -127,7 +129,7 @@ logs/<game>/
   20261110-175318.json    a short summary: exit code, duration, backend, engine...
 ```
 
-The summary only records the variables cave set itself, never your whole
+The summary only records the variables WinMac set itself, never your whole
 environment.
 
 ## Inside the code
@@ -138,7 +140,8 @@ internal/config   storage paths and the JSON database (written atomically)
 internal/engine   finding, installing and inspecting Wine builds; importing D3DMetal
 internal/prefix   creating prefixes, mapping Windows paths to Mac paths
 internal/launch   turning a profile into a command, running it and recording the log
-internal/steam    the Windows Steam client
+internal/steam    the Windows Steam client and its web helper fix
+tools/cefwrapper  the Windows program that replaces steamwebhelper.exe
 internal/doctor   system checks
 engine/           building Wine from CrossOver's sources (script + CI workflow)
 ```
@@ -150,14 +153,18 @@ environment without running anything, so it can be tested on any system.
 ## What doesn't work (yet)
 
 - **Games with kernel-level anti-cheat, such as Fortnite, can't run.** That
-  anti-cheat doesn't work under Wine on macOS, and cave doesn't try to get
+  anti-cheat doesn't work under Wine on macOS, and WinMac doesn't try to get
   around it.
 - **The CrossOver-based engine hasn't been tested on real games yet.** Its
   first build on GitHub Actions is still to come.
 - **Some in-game videos won't play** with that engine for now, because it is
   built without GStreamer.
-- **Steam's window may stay black.** This is a known problem with Steam's
-  built-in browser under Wine; a fix is planned.
+- **Steam's window can stay black the very first time.** Steam's interface is a
+  Chromium browser (`steamwebhelper.exe`) whose GPU process can't draw under
+  Wine on Apple Silicon. Before every Steam launch, WinMac swaps in a tiny
+  Windows program ([`tools/cefwrapper`](tools/cefwrapper)) that starts the real
+  helper with `--disable-gpu --single-process`. Steam only downloads that helper
+  on its first start, so if the window is black, quit Steam and launch it again.
 - `cave run` waits until everything in the prefix has closed, because Steam
   restarts itself after updates and games run as children of Steam. Use
   `--no-wait` to get your terminal back straight away.
@@ -174,5 +181,5 @@ environment without running anything, so it can be tested on any system.
 
 ## Legal
 
-cave is not affiliated with CodeWeavers, Apple or Valve. CrossOver is a
+WinMac is not affiliated with CodeWeavers, Apple or Valve. CrossOver is a
 trademark of CodeWeavers. You need to own the games you run.

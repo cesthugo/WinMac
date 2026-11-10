@@ -538,6 +538,11 @@ func (a *app) launch(ctx context.Context, g config.Game, logDir string, o *runOp
 	if err != nil {
 		return err
 	}
+	if isSteam(g) {
+		if g, err = a.prepareSteam(g, p, !o.dryRun); err != nil {
+			return err
+		}
+	}
 	plan, err := launch.Build(os.Environ(), launch.Spec{Game: g, Prefix: p, Engine: e, Debug: o.debug})
 	if err != nil {
 		return err
@@ -566,11 +571,44 @@ func (a *app) launch(ctx context.Context, g config.Game, logDir string, o *runOp
 		return nil
 	case res.ExitCode == 0:
 		return nil
-	case res.ExitCode == steam.RestartExitCode && strings.EqualFold(filepath.Base(strings.ReplaceAll(g.Exe, `\`, "/")), "steam.exe"):
+	case res.ExitCode == steam.RestartExitCode && isSteam(g):
 		fmt.Fprintln(os.Stderr, "(code 42: Steam restarted itself after an update — not an error)")
 		return nil
 	}
 	return fmt.Errorf("%s exited with code %d", g.Name, res.ExitCode)
+}
+
+func isSteam(g config.Game) bool {
+	return strings.EqualFold(filepath.Base(strings.ReplaceAll(g.Exe, `\`, "/")), "steam.exe")
+}
+
+// prepareSteam installs the web helper fix (black Steam window under Wine on
+// Apple silicon) and makes sure Steam won't swap Valve's helper back in.
+// With install false (dry runs) nothing is written.
+func (a *app) prepareSteam(g config.Game, p config.Prefix, install bool) (config.Game, error) {
+	if install {
+		wrapper, err := steam.Wrapper()
+		if err != nil {
+			return g, err
+		}
+		n, err := steam.InstallWebHelperWrapper(p.Path, wrapper)
+		if err != nil {
+			return g, fmt.Errorf("installing the Steam web helper fix: %w", err)
+		}
+		if n == 0 {
+			fmt.Fprintln(os.Stderr, "note: Steam has not downloaded its interface yet; if its window stays black, quit Steam and run this again")
+		}
+	}
+	hasFlag := false
+	for _, a := range g.Args {
+		if strings.EqualFold(a, steam.NoVerifyFiles) {
+			hasFlag = true
+		}
+	}
+	if !hasFlag {
+		g.Args = append([]string{steam.NoVerifyFiles}, g.Args...)
+	}
+	return g, nil
 }
 
 func (a *app) logs(args []string) error {

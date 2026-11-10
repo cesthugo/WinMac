@@ -1,4 +1,6 @@
-engine/build.sh and .github/workflows/build-engine.yml are adapted from
+engine/build.sh, .github/workflows/build-engine.yml and tools/cefwrapper
+(a Go port of tools/steamwebhelper/wrapper.c, itself based on
+notpop/steam-on-m1-wine and ByMedion/macos-wine-steam) are adapted from
 conversio-wine (https://github.com/theoron-apps/conversio-wine), whose build
 scripts are released under the MIT License:
 
